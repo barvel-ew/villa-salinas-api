@@ -16,11 +16,16 @@ const KV_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 
 async function getEstadoGuardado(loteCode) {
   if (!KV_URL || !KV_TOKEN) return null;
-  const res = await fetch(`${KV_URL}/get/estado:${loteCode}`, {
-    headers: { Authorization: `Bearer ${KV_TOKEN}` }
-  });
-  const data = await res.json();
-  return data.result; // null si nunca se guardó nada para ese lote
+  try {
+    const res = await fetch(`${KV_URL}/get/estado:${loteCode}`, {
+      headers: { Authorization: `Bearer ${KV_TOKEN}` }
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data) return null; // si algo falla, seguimos con el estado de fábrica
+    return data.result; // null si nunca se guardó nada para ese lote
+  } catch (e) {
+    return null; // problema de red u otro imprevisto: no tumbamos la cotización por esto
+  }
 }
 
 function cotizarBase(loteCode) {
