@@ -41,9 +41,18 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  await fetch(`${KV_URL}/set/estado:${item.lote}/${estado}`, {
+  const upstashRes = await fetch(`${KV_URL}/set/estado:${item.lote}/${estado}`, {
     headers: { Authorization: `Bearer ${KV_TOKEN}` }
   });
+  const upstashData = await upstashRes.json().catch(() => null);
+
+  if (!upstashRes.ok || !upstashData || upstashData.result !== 'OK') {
+    res.status(502).json({
+      error: 'No se pudo guardar el estado en la base de datos.',
+      detalle: upstashData || `HTTP ${upstashRes.status}`
+    });
+    return;
+  }
 
   res.status(200).json({ ok: true, lote: item.lote, estado_nuevo: estado });
 };
