@@ -16,43 +16,52 @@ const KV_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
+  try {
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Usa POST con { lote, estado }' });
+      return;
+    }
+    if (!KV_URL || !KV_TOKEN) {
+      res.status(500).json({ error: 'La base de datos no está configurada. Revisa las variables de entorno UPSTASH_REDIS_REST_URL y UPSTASH_REDIS_REST_TOKEN en Vercel.' });
+      return;
+    }
 
-  if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Usa POST con { lote, estado }' });
-    return;
-  }
-  if (!KV_URL || !KV_TOKEN) {
-    res.status(500).json({ error: 'La base de datos no está configurada. Revisa las variables de entorno UPSTASH_REDIS_REST_URL y UPSTASH_REDIS_REST_TOKEN en Vercel.' });
-    return;
-  }
+    const { lote, estado } = req.body || {};
+    if (!lote || !estado) {
+      res.status(400).json({ error: 'Faltan campos: "lote" y "estado" son requeridos' });
+      return;
+    }
+    if (!ESTADOS_VALIDOS.includes(estado)) {
+      res.status(400).json({ error: `Estado inválido. Usa uno de: ${ESTADOS_VALIDOS.join(', ')}` });
+      return;
+    }
+    const item = LOTES.find(l => l.lote.toUpperCase() === String(lote).toUpperCase());
+    if (!item) {
+      res.status(404).json({ error: `Lote "${lote}" no existe` });
+      return;
+    }
 
-  const { lote, estado } = req.body || {};
-  if (!lote || !estado) {
-    res.status(400).json({ error: 'Faltan campos: "lote" y "estado" son requeridos' });
-    return;
-  }
-  if (!ESTADOS_VALIDOS.includes(estado)) {
-    res.status(400).json({ error: `Estado inválido. Usa uno de: ${ESTADOS_VALIDOS.join(', ')}` });
-    return;
-  }
-  const item = LOTES.find(l => l.lote.toUpperCase() === String(lote).toUpperCase());
-  if (!item) {
-    res.status(404).json({ error: `Lote "${lote}" no existe` });
-    return;
-  }
+    let upstashRes, upstashData;
+    try {
+      upstashRes = await fetch(`${KV_URL}/set/estado:${item.lote}/${estado}`, {
+        headers: { Authorization: `Bearer ${KV_TOKEN}` }
+      });
+      upstashData = await upstashRes.json().catch(() => null);
+    } catch (e) {
+      res.status(502).json({ error: 'No se pudo conectar con la base de datos.', detalle: String(e) });
+      return;
+    }
 
-  const upstashRes = await fetch(`${KV_URL}/set/estado:${item.lote}/${estado}`, {
-    headers: { Authorization: `Bearer ${KV_TOKEN}` }
-  });
-  const upstashData = await upstashRes.json().catch(() => null);
+    if (!upstashRes.ok || !upstashData || upstashData.result !== 'OK') {
+      res.status(502).json({
+        error: 'No se pudo guardar el estado en la base de datos.',
+        detalle: upstashData || `HTTP ${upstashRes.status}`
+      });
+      return;
+    }
 
-  if (!upstashRes.ok || !upstashData || upstashData.result !== 'OK') {
-    res.status(502).json({
-      error: 'No se pudo guardar el estado en la base de datos.',
-      detalle: upstashData || `HTTP ${upstashRes.status}`
-    });
-    return;
+    res.status(200).json({ ok: true, lote: item.lote, estado_nuevo: estado });
+  } catch (e) {
+    res.status(500).json({ error: 'Error inesperado en el servidor.', detalle: String(e) });
   }
-
-  res.status(200).json({ ok: true, lote: item.lote, estado_nuevo: estado });
 };
